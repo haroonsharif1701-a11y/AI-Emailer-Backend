@@ -45,7 +45,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 builder.Services.AddSingleton<IJwtTokenService>(new JwtTokenService(jwtKey, jwtIssuer, jwtAudience));
-
+builder.Services.AddScoped<IAttachmentTextExtractor, AttachmentTextExtractor>();
 // ILlmProvider is the abstraction the plan calls for — swap the registration
 // below to switch providers without touching any controller or business logic.
 var llmProvider = builder.Configuration["Llm:Provider"] ?? "Ollama";
