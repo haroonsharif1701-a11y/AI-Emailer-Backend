@@ -1,0 +1,125 @@
+using System.Security.Claims;
+using AiEmailer.Api.Models;
+using AiEmailer.Api.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace AiEmailer.Api.Controllers;
+
+[ApiController]
+[Route("api/user")]
+[Authorize]
+public class UserController : ControllerBase
+{
+    private readonly IUserService _userService;
+    private readonly ILogger<UserController> _logger;
+
+    public UserController(IUserService userService, ILogger<UserController> logger)
+    {
+        _userService = userService;
+        _logger = logger;
+    }
+
+    // Reads the acting user's own id/org straight from the JWT claims —
+    // never trusts an org/user id passed in from the client for these,
+    // since that would let one org's admin read or edit another org's users.
+    //
+    // Checks both ClaimTypes.NameIdentifier and the raw "sub" claim name:
+    // ASP.NET Core maps "sub" -> ClaimTypes.NameIdentifier by default, but
+    // that mapping depends on JwtBearerOptions.MapInboundClaims and has
+    // changed behavior across .NET versions — checking both avoids this
+    // silently breaking on a future upgrade.
+    private int CurrentUserId => int.Parse(
+        User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")
+        ?? throw new InvalidOperationException("Token is missing a user id claim."));
+
+    private int CurrentOrgId => int.Parse(
+        User.FindFirst("org_id")?.Value
+        ?? throw new InvalidOperationException("Token is missing the org_id claim."));
+
+    [HttpGet("list")]
+    public async Task<ActionResult<List<UserListItem>>> List()
+    {
+        var users = await _userService.ListAsync(CurrentOrgId);
+        return Ok(users);
+    }
+
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<UserDetail>> Get(int id)
+    {
+        string uuqid = HttpContext.Session.GetString("Uuqid");
+        var user = await _userService.GetAsync(id, uuqid);
+        if (user is null) return NotFound(new { message = $"User {id} not found." });
+
+        // Extra guard beyond CurrentOrgId scoping on List: a user id from
+        // another org should 404, not leak that org's user data.
+        if (user.IdOrg != CurrentOrgId) return NotFound(new { message = $"User {id} not found." });
+
+        return Ok(user);
+    }
+
+    [HttpPost("addupd")]
+    public async Task<IActionResult> AddUpdate([FromBody] UserSaveRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.FullName))
+        {
+            return BadRequest(new { message = "Username and full name are required." });
+        }
+        string uuqid = HttpContext.Session.GetString("Uuqid");
+        if (request.IdUser != 0)
+        {
+            // Confirm the user being edited actually belongs to the caller's
+            // org before touching it — same reasoning as Get above.
+            var existing = await _userService.GetAsync(request.IdUser, uuqid);
+            if (existing is null || existing.IdOrg != CurrentOrgId)
+            {
+                return NotFound(new { message = $"User {request.IdUser} not found." });
+            }
+        }
+
+        try
+        {
+            await _userService.AddUpdateAsync(request, CurrentUserId, uuqid);
+            return Ok(new { message = "Saved." });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id)
+    {
+        string uuqid = HttpContext.Session.GetString("Uuqid");
+        // Backend-only for now — no UI button wired to this yet, per scope.
+        var existing = await _userService.GetAsync(id, uuqid);
+        if (existing is null || existing.IdOrg != CurrentOrgId)
+        {
+            return NotFound(new { message = $"User {id} not found." });
+        }
+
+        await _userService.DeleteAsync(id);
+        return Ok(new { message = "Deleted." });
+    }
+
+    [HttpGet("me")]
+    public async Task<ActionResult<UserDetail>> Me()
+    {
+        string? uuqid = HttpContext.Session.GetString("Uuqid");
+
+        if (string.IsNullOrWhiteSpace(uuqid))
+        {
+            return Unauthorized(new { message = "User session not found." });
+        }
+
+        var user = await _userService.GetAsync(CurrentUserId, uuqid);
+
+        if (user is null || user.IdOrg != CurrentOrgId)
+        {
+            return NotFound(new { message = "Logged-in user not found." });
+        }
+
+        return Ok(user);
+    }
+}

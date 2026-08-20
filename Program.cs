@@ -5,7 +5,16 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddDistributedMemoryCache();
 
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+});
 // ---------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------
@@ -46,6 +55,8 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Services.AddSingleton<IJwtTokenService>(new JwtTokenService(jwtKey, jwtIssuer, jwtAudience));
 builder.Services.AddScoped<IAttachmentTextExtractor, AttachmentTextExtractor>();
+builder.Services.AddScoped<IRoleService, RoleService>();
+builder.Services.AddScoped<IUserService, UserService>();
 // ILlmProvider is the abstraction the plan calls for — swap the registration
 // below to switch providers without touching any controller or business logic.
 var llmProvider = builder.Configuration["Llm:Provider"] ?? "Ollama";
@@ -57,17 +68,20 @@ else
 {
     builder.Services.AddHttpClient<ILlmProvider, OllamaLlmProvider>();
 }
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
     {
-        // Dev-only: the static frontend is served from file:// or a plain
-        // http-server during development. Tighten this to your real origin
-        // before deploying.
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        policy
+            .WithOrigins(
+                "http://localhost:5500",
+                "http://127.0.0.1:5500"
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
     });
 });
 
@@ -102,7 +116,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
-
+app.UseSession();
 // Logs every request that hits the API — method, path, status code, and how
 // long it took. This is what lets you SEE that CORS/auth/routing worked,
 // instead of only finding out when something silently fails.

@@ -7,6 +7,7 @@ public class AttachmentAnalysisResponse
     public string FileType { get; set; } = "";
 
     public string Summary { get; set; } = "";
+    public string Description { get; set; } = "";
     public string ThreatLevel { get; set; } = "";
     public string ThreatNotes { get; set; } = "";
 }

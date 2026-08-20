@@ -78,9 +78,9 @@ public class AttachmentController : ControllerBase
         }
 
         var systemPrompt =
-            "You analyze document contents for a business email assistant. Respond with ONLY a JSON object, " +
+            "You analyze document contents for a business email assistant. Do the summary of the attachment in minimum 15-20 lines. Respond with ONLY a JSON object. Make the description of the attachment of approx 2-3 lines meaningful, " +
             "no markdown fences, no commentary, matching exactly this shape: " +
-            "{\"summary\": string, \"threatLevel\": \"Low\"|\"Medium\"|\"High\", \"threatNotes\": string}. " +
+            "{\"summary\": string, \"description\": string, \"threatLevel\": \"Low\"|\"Medium\"|\"High\", \"threatNotes\": string}. " +
             "threatLevel should reflect signs of malicious content, scams, or social engineering in the " +
             "document text itself — not general business risk. Most ordinary business documents are Low.";
 

@@ -9,30 +9,45 @@ namespace AiEmailer.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IJwtTokenService _jwt;
+    private readonly IAuthService _authService;
 
-    public AuthController(IJwtTokenService jwt)
+    public AuthController(IJwtTokenService jwt, IAuthService authService)
     {
         _jwt = jwt;
+        _authService = authService;
     }
 
-    // NOTE: this is a placeholder credential check so the frontend you
-    // already built has something real to call. Replace the body of this
-    // method with ASP.NET Core Identity + a Users table (per Module 1 /
-    // Module 3 in the plan) before this goes anywhere near production —
-    // right now it accepts exactly one hardcoded account and does not
-    // hash/compare a real password store.
     [HttpPost("login")]
-    public ActionResult<LoginResponse> Login([FromBody] LoginRequest request)
+    public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request)
     {
-        const string demoEmail = "admin@company.com";
-        const string demoPassword = "Password123!";
+        var result = await _authService.LoginAsync(request.Email, request.Password);
 
-        if (request.Email != demoEmail || request.Password != demoPassword)
+        if (result.Status != LoginStatus.Success)
         {
-            return Unauthorized(new { message = "Invalid email or password." });
+            return Ok(new LoginResponse((int)result.Status, null, null, null, null, null, null, null, 0));
         }
 
-        var token = _jwt.CreateToken(userId: "1", email: demoEmail, role: "Administrator");
-        return Ok(new LoginResponse(token, demoEmail, "Administrator", 30));
+        var token = _jwt.CreateToken(
+            userId: result.IdUser!.Value.ToString(),
+            email: result.Username!,
+            role: result.Role ?? "Unknown",
+            idOrg: result.IdOrg!.Value.ToString()
+        );
+
+        HttpContext.Session.SetString("Uuqid", result.Uuqid.ToString());
+        HttpContext.Session.SetInt32("IdOrg", result.IdOrg ?? 0);
+        HttpContext.Session.SetString("Email", result.Username);
+
+        return Ok(new LoginResponse(
+            (int)result.Status,
+            token,
+            result.Username,
+            result.FullName,
+            result.Uuqid,
+            result.IdRole,
+            result.Role,
+            result.IdOrg,
+            30
+        ));
     }
 }
