@@ -33,9 +33,12 @@ public class UserController : ControllerBase
         User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")
         ?? throw new InvalidOperationException("Token is missing a user id claim."));
 
-    private int CurrentOrgId => int.Parse(
-        User.FindFirst("org_id")?.Value
-        ?? throw new InvalidOperationException("Token is missing the org_id claim."));
+    private int CurrentOrgId =>
+        int.TryParse(User.FindFirst("org_id")?.Value, out var claimOrgId)
+            ? claimOrgId
+            : HttpContext.Session.GetInt32("IdOrg")
+                ?? throw new InvalidOperationException(
+                    "Organization ID is missing from both JWT claims and session.");
 
     [HttpGet("list")]
     public async Task<ActionResult<List<UserListItem>>> List()
@@ -47,7 +50,7 @@ public class UserController : ControllerBase
     [HttpGet("{id:int}")]
     public async Task<ActionResult<UserDetail>> Get(int id)
     {
-        string uuqid = HttpContext.Session.GetString("Uuqid");
+        string? uuqid = null; //HttpContext.Session.GetString("Uuqid");
         var user = await _userService.GetAsync(id, uuqid);
         if (user is null) return NotFound(new { message = $"User {id} not found." });
 
@@ -70,7 +73,7 @@ public class UserController : ControllerBase
         {
             // Confirm the user being edited actually belongs to the caller's
             // org before touching it — same reasoning as Get above.
-            var existing = await _userService.GetAsync(request.IdUser, uuqid);
+            var existing = await _userService.GetAsync(request.IdUser, null);
             if (existing is null || existing.IdOrg != CurrentOrgId)
             {
                 return NotFound(new { message = $"User {request.IdUser} not found." });

@@ -8,7 +8,9 @@ public record UserListItem(
     int IdRole,
     string RoleName,
     bool IsActive,
-    string OrgName
+    string OrgName,
+    int? IdDept,
+    string? DeptName
 );
 
 // What the edit modal needs to pre-fill the form, PLUS the fields the form
@@ -25,6 +27,8 @@ public record UserDetail(
     string RoleName,
     string OrgName,
     int IdOrg,
+    int? IdDept,
+    string? DeptName,
     string? Os,
     string? RegId,
     string? DeviceToken
@@ -37,7 +41,8 @@ public record UserSaveRequest(
     string Username,
     string FullName,
     string? Password,
-    int IdRole
+    int IdRole,
+    int? IdDept
 );
 
 public record RoleListItem(int IdRole, string RoleName);

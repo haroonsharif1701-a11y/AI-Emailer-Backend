@@ -47,6 +47,8 @@ public class UserService : IUserService
                 IdRole: idRole,
                 RoleName: roleNameById.TryGetValue(idRole, out var name) ? name : "Unknown role",
                 OrgName: reader.GetString(reader.GetOrdinal("org_name")),
+                IdDept: reader.IsDBNull("id_dept") ? null : reader.GetInt32("id_dept"),
+                DeptName: reader.IsDBNull("dept_name") ? null : reader.GetString("dept_name"),
                 IsActive: !reader.IsDBNull(isActiveOrdinal) && reader.GetBoolean(isActiveOrdinal)
             ));
         }
@@ -75,6 +77,8 @@ public class UserService : IUserService
             RoleName: reader.GetString(reader.GetOrdinal("role_name")),
             IdOrg: reader.GetInt32(reader.GetOrdinal("id_org")),
             OrgName: reader.GetString(reader.GetOrdinal("org_name")),
+            IdDept: reader.IsDBNull("id_dept") ? null : reader.GetInt32("id_dept"),
+            DeptName: reader.IsDBNull("dept_name") ? null : reader.GetString("dept_name"),
             Os: reader.IsDBNull(reader.GetOrdinal("os")) ? null : reader.GetString(reader.GetOrdinal("os")),
             RegId: reader.IsDBNull(reader.GetOrdinal("regid")) ? null : reader.GetString(reader.GetOrdinal("regid")),
             DeviceToken: reader.IsDBNull(reader.GetOrdinal("device_token")) ? null : reader.GetString(reader.GetOrdinal("device_token"))
@@ -107,7 +111,7 @@ public class UserService : IUserService
             // one (org selection wasn't in scope for this pass), new users
             // are created in the acting admin's own org — looked up here
             // rather than trusted from client input.
-            var actingUser = await GetAsync(actingUserId, uuqid)
+            var actingUser = await GetAsync(actingUserId, null)
                 ?? throw new InvalidOperationException("Could not resolve the acting user's organization.");
             idOrgToUse = actingUser.IdOrg;
             osToUse = DBNull.Value;
@@ -122,7 +126,7 @@ public class UserService : IUserService
             // here would silently wipe the user's org/os/regid/device_token
             // on every single edit. Fetching and passing back the existing
             // values is what prevents that.
-            var existing = await GetAsync(request.IdUser, uuqid)
+            var existing = await GetAsync(request.IdUser, null)
                 ?? throw new ArgumentException($"User {request.IdUser} not found.");
             idOrgToUse = existing.IdOrg;
             osToUse = (object?)existing.Os ?? DBNull.Value;
@@ -141,6 +145,7 @@ public class UserService : IUserService
         cmd.Parameters.AddWithValue("@uuqid", request.IdUser == 0 ? Guid.NewGuid() : (object)DBNull.Value);
         cmd.Parameters.AddWithValue("@id_role", request.IdRole);
         cmd.Parameters.AddWithValue("@id_org", idOrgToUse);
+        cmd.Parameters.AddWithValue("@id_dept",(object?)request.IdDept ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@os", osToUse);
         cmd.Parameters.AddWithValue("@regid", regIdToUse);
         cmd.Parameters.AddWithValue("@device_token", deviceTokenToUse);

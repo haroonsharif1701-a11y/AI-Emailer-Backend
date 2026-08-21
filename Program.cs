@@ -57,6 +57,9 @@ builder.Services.AddSingleton<IJwtTokenService>(new JwtTokenService(jwtKey, jwtI
 builder.Services.AddScoped<IAttachmentTextExtractor, AttachmentTextExtractor>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IDepartmentService, DepartmentService>();
+builder.Services.AddScoped<ITeamService, TeamService>();
+builder.Services.AddScoped<IOrganizationService, OrganizationService>();
 // ILlmProvider is the abstraction the plan calls for — swap the registration
 // below to switch providers without touching any controller or business logic.
 var llmProvider = builder.Configuration["Llm:Provider"] ?? "Ollama";
