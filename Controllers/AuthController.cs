@@ -1,5 +1,7 @@
 using AiEmailer.Api.Models;
 using AiEmailer.Api.Services;
+using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
+using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AiEmailer.Api.Controllers;
@@ -31,7 +33,8 @@ public class AuthController : ControllerBase
             userId: result.IdUser!.Value.ToString(),
             email: result.Username!,
             role: result.Role ?? "Unknown",
-            idOrg: result.IdOrg!.Value.ToString()
+            idOrg: result.IdOrg!.Value.ToString(),
+            uuqid: result.Uuqid.ToString()
         );
 
         HttpContext.Session.SetString("Uuqid", result.Uuqid.ToString());
@@ -49,5 +52,16 @@ public class AuthController : ControllerBase
             result.IdOrg,
             30
         ));
+    }
+
+    [HttpPost("logout")]
+
+    public async Task<ActionResult> Logout() 
+    {
+
+        string uuqid = HttpContext.Session.GetString("Uuqid");
+        HttpContext.Session.Remove("Uuqid");
+
+        return Ok("Logout Successful!");
     }
 }

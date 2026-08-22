@@ -33,6 +33,9 @@ public class UserController : ControllerBase
         User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")
         ?? throw new InvalidOperationException("Token is missing a user id claim."));
 
+    private string CurrentUUqid =>
+        User.FindFirstValue("uuqid")
+        ?? throw new InvalidOperationException("User UUID is missing from token.");
     private int CurrentOrgId =>
         int.TryParse(User.FindFirst("org_id")?.Value, out var claimOrgId)
             ? claimOrgId
@@ -68,7 +71,7 @@ public class UserController : ControllerBase
         {
             return BadRequest(new { message = "Username and full name are required." });
         }
-        string uuqid = HttpContext.Session.GetString("Uuqid");
+        string uuqid = HttpContext.Session.GetString("Uuqid") ?? CurrentUUqid;
         if (request.IdUser != 0)
         {
             // Confirm the user being edited actually belongs to the caller's
@@ -94,7 +97,7 @@ public class UserController : ControllerBase
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        string uuqid = HttpContext.Session.GetString("Uuqid");
+        string uuqid = HttpContext.Session.GetString("Uuqid") ?? CurrentUUqid; ;
         // Backend-only for now — no UI button wired to this yet, per scope.
         var existing = await _userService.GetAsync(id, uuqid);
         if (existing is null || existing.IdOrg != CurrentOrgId)
@@ -109,7 +112,7 @@ public class UserController : ControllerBase
     [HttpGet("me")]
     public async Task<ActionResult<UserDetail>> Me()
     {
-        string? uuqid = HttpContext.Session.GetString("Uuqid");
+        string? uuqid = HttpContext.Session.GetString("Uuqid") ?? CurrentUUqid;
 
         if (string.IsNullOrWhiteSpace(uuqid))
         {

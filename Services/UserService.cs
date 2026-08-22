@@ -68,6 +68,7 @@ public class UserService : IUserService
         await using var reader = await cmd.ExecuteReaderAsync();
 
         if (!await reader.ReadAsync()) return null;
+        var isActiveOrdinal = reader.GetOrdinal("is_active");
 
         return new UserDetail(
             IdUser: reader.GetInt32(reader.GetOrdinal("id_user")),
@@ -79,6 +80,7 @@ public class UserService : IUserService
             OrgName: reader.GetString(reader.GetOrdinal("org_name")),
             IdDept: reader.IsDBNull("id_dept") ? null : reader.GetInt32("id_dept"),
             DeptName: reader.IsDBNull("dept_name") ? null : reader.GetString("dept_name"),
+            IsActive: !reader.IsDBNull(isActiveOrdinal) && reader.GetBoolean(isActiveOrdinal),
             Os: reader.IsDBNull(reader.GetOrdinal("os")) ? null : reader.GetString(reader.GetOrdinal("os")),
             RegId: reader.IsDBNull(reader.GetOrdinal("regid")) ? null : reader.GetString(reader.GetOrdinal("regid")),
             DeviceToken: reader.IsDBNull(reader.GetOrdinal("device_token")) ? null : reader.GetString(reader.GetOrdinal("device_token"))
@@ -149,6 +151,7 @@ public class UserService : IUserService
         cmd.Parameters.AddWithValue("@os", osToUse);
         cmd.Parameters.AddWithValue("@regid", regIdToUse);
         cmd.Parameters.AddWithValue("@device_token", deviceTokenToUse);
+        cmd.Parameters.AddWithValue("@isactive", request.IsActive);
         cmd.Parameters.AddWithValue("@createdby", actingUserId);
         cmd.Parameters.AddWithValue("@modifiedby", actingUserId);
 

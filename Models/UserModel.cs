@@ -31,7 +31,8 @@ public record UserDetail(
     string? DeptName,
     string? Os,
     string? RegId,
-    string? DeviceToken
+    string? DeviceToken,
+    bool IsActive
 );
 
 // IdUser = 0 means create. Password is required by the controller when
@@ -42,7 +43,8 @@ public record UserSaveRequest(
     string FullName,
     string? Password,
     int IdRole,
-    int? IdDept
+    int? IdDept,
+    bool? IsActive
 );
 
 public record RoleListItem(int IdRole, string RoleName);

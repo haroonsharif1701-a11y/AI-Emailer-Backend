@@ -18,12 +18,13 @@ public class JwtTokenService : IJwtTokenService
         _audience = audience;
     }
 
-    public string CreateToken(string userId, string email, string role, string idOrg)
+    public string CreateToken(string userId, string email, string role, string idOrg, string uuqid)
     {
         var claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, userId),
             new Claim(JwtRegisteredClaimNames.Email, email),
+            new Claim("uuqid", uuqid),
             new Claim(ClaimTypes.Role, role),
             new Claim("org_id", idOrg), // custom claim — read via User.FindFirst("org_id") in controllers
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
