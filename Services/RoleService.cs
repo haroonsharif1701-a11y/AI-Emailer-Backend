@@ -35,4 +35,29 @@ public class RoleService : IRoleService
 
         return results;
     }
+
+    public async Task AddUpdateAsync(RoleModel.RoleSaveRequest request, int actingUserId)
+    {
+        await using var conn = new SqlConnection(_connectionString);
+        await using var cmd = new SqlCommand("role_addupd", conn) { CommandType = CommandType.StoredProcedure };
+
+        cmd.Parameters.AddWithValue("@id_role", request.IdRole);
+        cmd.Parameters.AddWithValue("@role_name", request.RoleName);
+        cmd.Parameters.AddWithValue("@createdby", actingUserId);
+        cmd.Parameters.AddWithValue("@modifiedby", actingUserId);
+
+        await conn.OpenAsync();
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    // ---- NEW ----
+    public async Task DeleteAsync(int idRole)
+    {
+        await using var conn = new SqlConnection(_connectionString);
+        await using var cmd = new SqlCommand("role_delete", conn) { CommandType = CommandType.StoredProcedure };
+        cmd.Parameters.AddWithValue("@id_role", idRole);
+
+        await conn.OpenAsync();
+        await cmd.ExecuteNonQueryAsync();
+    }
 }
