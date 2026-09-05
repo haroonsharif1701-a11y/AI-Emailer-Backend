@@ -15,7 +15,8 @@ namespace AiEmailer.Api.Models;
         int? IdRole,
         string? Role,
         int? IdOrg,
-        int ExpiresInMinutes
+        int ExpiresInMinutes,
+        DateTime? LogTime
     );
 
     public record GenerateReplyRequest(string OriginalEmailBody, string Tone, string? SenderName);

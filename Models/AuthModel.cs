@@ -46,5 +46,6 @@ public record LoginResult(
     Guid? Uuqid = null,
     int? IdRole = null,
     string? Role = null,
-    int? IdOrg = null
+    int? IdOrg = null,
+    int? LogStatus = null
 );

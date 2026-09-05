@@ -3,6 +3,7 @@ using AiEmailer.Api.Services;
 using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.VisualBasic;
 
 namespace AiEmailer.Api.Controllers;
 
@@ -26,7 +27,7 @@ public class AuthController : ControllerBase
 
         if (result.Status != LoginStatus.Success)
         {
-            return Ok(new LoginResponse((int)result.Status, null, null, null, null, null, null, null, 0));
+            return Ok(new LoginResponse((int)result.Status, null, null, null, null, null, null, null, 0, null));
         }
 
         var token = _jwt.CreateToken(
@@ -41,6 +42,8 @@ public class AuthController : ControllerBase
         HttpContext.Session.SetInt32("IdOrg", result.IdOrg ?? 0);
         HttpContext.Session.SetString("Email", result.Username);
 
+        DateTime LogTime = DateTime.Now ;
+
         return Ok(new LoginResponse(
             (int)result.Status,
             token,
@@ -50,7 +53,8 @@ public class AuthController : ControllerBase
             result.IdRole,
             result.Role,
             result.IdOrg,
-            30
+            30,
+            LogTime
         ));
     }
 

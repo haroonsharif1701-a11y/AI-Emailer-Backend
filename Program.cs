@@ -1,8 +1,10 @@
-using System.Text;
+using AiEmailer.Api.Data;
+using AiEmailer.Api.Middlewares;
 using AiEmailer.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDistributedMemoryCache();
@@ -54,12 +56,15 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 builder.Services.AddSingleton<IJwtTokenService>(new JwtTokenService(jwtKey, jwtIssuer, jwtAudience));
+builder.Services.AddScoped<DB>();
 builder.Services.AddScoped<IAttachmentTextExtractor, AttachmentTextExtractor>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IDepartmentService, DepartmentService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
 builder.Services.AddScoped<IOrganizationService, OrganizationService>();
+builder.Services.AddScoped<IMenuService, MenuService>();
+builder.Services.AddScoped<IRoleMenuPermissionService, RoleMenuPermissionService>();
 // ILlmProvider is the abstraction the plan calls for — swap the registration
 // below to switch providers without touching any controller or business logic.
 var llmProvider = builder.Configuration["Llm:Provider"] ?? "Ollama";
@@ -89,6 +94,7 @@ builder.Services.AddCors(options =>
     });
 });
 
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -98,10 +104,66 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
+
             ValidIssuer = jwtIssuer,
             ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwtKey)),
+
             ClockSkew = TimeSpan.FromSeconds(30),
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+
+                context.Response.StatusCode =
+                    StatusCodes.Status401Unauthorized;
+
+                context.Response.ContentType = "application/json";
+
+                var message = "Authentication token is required.";
+
+                if (context.AuthenticateFailure != null)
+                {
+                    message = context.AuthenticateFailure switch
+                    {
+                        SecurityTokenExpiredException =>
+                            "Authentication token has expired.",
+
+                        SecurityTokenMalformedException =>
+                            "Authentication token is malformed.",
+
+                        _ =>
+                            "Authentication token is invalid."
+                    };
+                }
+
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    success = false,
+                    statusCode = 401,
+                    message
+                });
+            },
+
+            OnForbidden = async context =>
+            {
+                context.Response.StatusCode =
+                    StatusCodes.Status403Forbidden;
+
+                context.Response.ContentType = "application/json";
+
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    success = false,
+                    statusCode = 403,
+                    message = "You do not have permission to access this resource."
+                });
+            }
         };
     });
 
@@ -121,6 +183,7 @@ if (app.Environment.IsDevelopment())
 //app.UseHttpsRedirection(); //while pushing on server with a non http site then comment it
 app.UseCors("Frontend");
 app.UseSession();
+app.UseMiddleware<SystemKeyMiddleware>();
 // Logs every request that hits the API — method, path, status code, and how
 // long it took. This is what lets you SEE that CORS/auth/routing worked,
 // instead of only finding out when something silently fails.
