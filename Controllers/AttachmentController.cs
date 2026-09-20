@@ -3,6 +3,7 @@ using AiEmailer.Api.Models;
 using AiEmailer.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace AiEmailer.Api.Controllers;
 
@@ -19,13 +20,71 @@ public class AttachmentController : ControllerBase
     private readonly IAttachmentTextExtractor _extractor;
     private readonly ILlmProvider _llm;
     private readonly ILogger<AttachmentController> _logger;
+    private readonly IFileStorageService _fileStorage;
+    private readonly IAttachmentRepository _attachmentRepo;
 
-    public AttachmentController(IAttachmentTextExtractor extractor, ILlmProvider llm, ILogger<AttachmentController> logger)
+    public AttachmentController(
+        IAttachmentTextExtractor extractor,
+        ILlmProvider llm,
+        IFileStorageService fileStorage,
+        IAttachmentRepository attachmentRepo,
+        ILogger<AttachmentController> logger)
     {
         _extractor = extractor;
         _llm = llm;
+        _fileStorage = fileStorage;
+        _attachmentRepo = attachmentRepo;
         _logger = logger;
     }
+
+    private AttachmentListItem ToListItem(AttachmentRecord r) => new()
+    {
+        Id = r.IdAttachment,
+        FileName = r.FileName,
+        FileType = r.FileType ?? "",
+        FileSize = r.FileSize is long size ? FormatFileSize(size) : null,
+        Summary = r.AttachmentSummary ?? "",
+        Description = r.AttachmentDescription ?? "",
+        AnalyzedOn = r.AnalyzedOn,
+        AnalysisStatus = r.AnalysisStatus ?? "",
+        PreviewUrl = $"/api/attachment/file/{r.IdAttachment}",
+        DownloadUrl = $"/api/attachment/file/{r.IdAttachment}?download=true",
+    };
+
+    private static string GetContentType(string? fileType) => fileType?.ToLowerInvariant() switch
+    {
+        "pdf" => "application/pdf",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "png" => "image/png",
+        "jpg" or "jpeg" => "image/jpeg",
+        _ => "application/octet-stream",
+    };
+
+    private static string FormatFileSize(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB" };
+        double size = bytes;
+        var unitIndex = 0;
+        while (size >= 1024 && unitIndex < units.Length - 1)
+        {
+            size /= 1024;
+            unitIndex++;
+        }
+        return $"{size:0.#} {units[unitIndex]}";
+    }
+
+    // TODO: confirm these claim names against your actual JWT — see gap #3.
+    private int GetCurrentOrgId() =>
+        int.TryParse(User.FindFirst("id_org")?.Value ?? User.FindFirst("org_id")?.Value, out var orgId)
+            ? orgId
+            : throw new InvalidOperationException("Could not resolve id_org from the current user's claims.");
+
+    private int GetCurrentUserId() =>
+        int.TryParse(User.FindFirst("id_user")?.Value ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var userId)
+            ? userId
+            : throw new InvalidOperationException("Could not resolve id_user from the current user's claims.");
+
 
     [HttpPost("analyze")]
     [RequestSizeLimit(MaxFileSizeBytes)]
@@ -78,7 +137,7 @@ public class AttachmentController : ControllerBase
         }
 
         var systemPrompt =
-            "You analyze document contents for a business email assistant. Do the summary of the attachment in minimum 15-20 lines. Respond with ONLY a JSON object. Make the description of the attachment of approx 2-3 lines meaningful, " +
+            "You analyze document contents for a business email assistant. Do the summary of the attachment in minimum 15-20 lines possibly. Respond with ONLY a JSON object. Make the description of the attachment of approx 2-3 lines possibly meaningful, " +
             "no markdown fences, no commentary, matching exactly this shape: " +
             "{\"summary\": string, \"description\": string, \"threatLevel\": \"Low\"|\"Medium\"|\"High\", \"threatNotes\": string}. " +
             "threatLevel should reflect signs of malicious content, scams, or social engineering in the " +
@@ -104,7 +163,46 @@ public class AttachmentController : ControllerBase
             parsed.FileName = file.FileName;
             parsed.FileType = ext.TrimStart('.').ToUpperInvariant();
 
+            // Persist the physical file + DB row. Deliberately non-fatal:
+            // if storage/DB isn't wired up yet (or hiccups), the user still
+            // gets their AI analysis rather than a failed request. See the
+            // recommendations for hardening this later.
+            try
+            {
+                await using var saveStream = file.OpenReadStream();
+                var stored = await _fileStorage.SaveAsync(saveStream, file.FileName, ct);
+
+                var idOrg = GetCurrentOrgId();
+                var idUser = GetCurrentUserId();
+                var analyzedOn = DateTime.UtcNow;
+
+                var idAttachment = await _attachmentRepo.AddAsync(new AttachmentRecordInput
+                {
+                    IdOrg = idOrg,
+                    CreatedBy = idUser,
+                    FileName = file.FileName,
+                    FilePath = stored.StoredFileName,
+                    FileType = parsed.FileType,
+                    FileSize = file.Length,
+                    AttachmentSummary = parsed.Summary,
+                    AttachmentDescription = parsed.Description,
+                    AnalyzedOn = analyzedOn,
+                    AnalysisStatus = "Completed",
+                }, ct);
+
+                parsed.Id = idAttachment;
+                parsed.FileSize = FormatFileSize(file.Length);
+                parsed.AnalyzedOn = analyzedOn;
+                parsed.PreviewUrl = $"/api/attachment/file/{idAttachment}";
+                parsed.DownloadUrl = $"/api/attachment/file/{idAttachment}?download=true";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to persist attachment {FileName} after analysis", file.FileName);
+            }
+
             return Ok(parsed);
+
         }
         catch (JsonException)
         {
@@ -115,4 +213,55 @@ public class AttachmentController : ControllerBase
             return StatusCode(502, new { message = ex.Message });
         }
     }
+
+    [HttpGet("list")]
+    public async Task<ActionResult<IEnumerable<AttachmentListItem>>> List(CancellationToken ct)
+    {
+        var records = await _attachmentRepo.ListAsync(idAttachment: null, ct);
+        return Ok(records.Select(ToListItem));
+    }
+
+    [HttpGet("file/{id:int}")]
+    public async Task<IActionResult> GetFile(int id, [FromQuery] bool download = false, CancellationToken ct = default)
+    {
+        var records = await _attachmentRepo.ListAsync(id, ct);
+        var record = records.FirstOrDefault();
+        if (record is null || string.IsNullOrWhiteSpace(record.FilePath) || !_fileStorage.Exists(record.FilePath))
+            return NotFound();
+
+        var physicalPath = _fileStorage.GetPhysicalPath(record.FilePath);
+        var contentType = GetContentType(record.FileType);
+
+        return download
+            ? PhysicalFile(physicalPath, contentType, record.FileName)
+            : PhysicalFile(physicalPath, contentType);
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id, CancellationToken ct)
+    {
+        var idOrg = GetCurrentOrgId();
+        var records = await _attachmentRepo.ListAsync(id, ct);
+        var record = records.FirstOrDefault();
+        if (record is null) return NotFound();
+
+        try
+        {
+            await _attachmentRepo.DeleteAsync(id, idOrg, ct);
+        }
+        catch (Exception ex)
+        {
+            // attachment_analyzer_delete THROWs 50021 when the id doesn't
+            // belong to this org — treat that as a 404, not a 500.
+            _logger.LogWarning(ex, "Failed to delete attachment {Id}", id);
+            return NotFound(new { message = "Attachment not found or does not belong to this organization." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(record.FilePath))
+        {
+            _fileStorage.Delete(record.FilePath);
+        }
+
+        return Ok(new { id_attachment = id, operation = "DELETE" });
+    }   
 }

@@ -65,6 +65,8 @@ builder.Services.AddScoped<ITeamService, TeamService>();
 builder.Services.AddScoped<IOrganizationService, OrganizationService>();
 builder.Services.AddScoped<IMenuService, MenuService>();
 builder.Services.AddScoped<IRoleMenuPermissionService, RoleMenuPermissionService>();
+builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+builder.Services.AddScoped<IAttachmentRepository, AttachmentRepository>();
 // ILlmProvider is the abstraction the plan calls for — swap the registration
 // below to switch providers without touching any controller or business logic.
 var llmProvider = builder.Configuration["Llm:Provider"] ?? "Ollama";
