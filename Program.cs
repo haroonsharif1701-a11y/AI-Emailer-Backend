@@ -19,6 +19,8 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
     .AddEnvironmentVariables()
     .AddCommandLine(args);
 var mailProviders = builder.Configuration.GetSection("MailProvider").Get<MailProviderSettings>() ?? new();
+_ = ApplicationUrls.Origin(builder.Configuration, "BaseUrl");
+_ = ApplicationUrls.Origin(builder.Configuration, "FrontendUrl");
 mailProviders.Validate();
 builder.Services.AddSingleton(mailProviders);
 var protection = builder.Services.AddDataProtection().SetApplicationName("AiEmailer");
@@ -132,11 +134,8 @@ builder.Services.AddCors(options =>
     options.AddPolicy("Frontend", policy =>
     {
         policy
-            .WithOrigins(
-                "http://localhost:5500",
-                "http://127.0.0.1:5500",
-                "http://aiemailerprototype.com"
-            )
+                .WithOrigins(new[] { ApplicationUrls.Origin(builder.Configuration, "FrontendUrl") }
+                    .Concat(builder.Configuration.GetSection("Cors:AdditionalOrigins").Get<string[]>() ?? []).ToArray())
             .AllowAnyMethod()
             .AllowAnyHeader()
             .AllowCredentials();
@@ -246,6 +245,14 @@ if (mailProviders.Gmail) authentication.AddGoogle(options =>
         options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
         options.Events = new OAuthEvents
         {
+              OnRedirectToAuthorizationEndpoint = context =>
+              {
+                  var redirect = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(context.RedirectUri).Query);
+                  redirect["redirect_uri"] = ApplicationUrls.Origin(builder.Configuration, "BaseUrl") + "/signin-google";
+                  context.Response.Redirect(Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+                      context.RedirectUri.Split('?')[0], redirect));
+                  return Task.CompletedTask;
+              },
             OnRemoteFailure = context =>
             {
                 var logger = context.HttpContext.RequestServices
@@ -253,7 +260,7 @@ if (mailProviders.Gmail) authentication.AddGoogle(options =>
                 logger.LogError("Google remote authentication failed.");
 
                 context.HandleResponse();
-                var frontendUrl = builder.Configuration["Authentication:ExternalRedirectUri"] ?? "http://localhost:5500/login-error";
+                var frontendUrl = ApplicationUrls.LoginCallback(builder.Configuration);
                 context.Response.Redirect($"{frontendUrl}?error=remote_failure");
                 return Task.CompletedTask;
             }

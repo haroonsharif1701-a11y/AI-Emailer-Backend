@@ -13,7 +13,7 @@ public sealed partial class GmailMailProvider(GmailApiClient api, IConfiguration
     public const string MailScope = "https://www.googleapis.com/auth/gmail.modify";
     private const string ApiRoot = "https://gmail.googleapis.com/gmail/v1/users/me/";
     private string Setting(string name) => config[name] ?? throw new MailboxException(503, $"Configure {name} before connecting Gmail.");
-    private string Callback => Setting("Mailbox:Gmail:RedirectUri");
+    private string Callback => ApplicationUrls.GmailCallback(config);
 
     public string AuthorizationUrl(string state, string verifier)
     {

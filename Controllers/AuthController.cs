@@ -92,7 +92,7 @@ public class AuthController(IJwtTokenService jwt, IAuthService authService,
 
     private string CallbackUrl()
     {
-        var value = config["Authentication:ExternalRedirectUri"] ?? "http://localhost:5500/app/login-success.html";
+        var value = ApplicationUrls.LoginCallback(config);
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") ||
             !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
             throw new InvalidOperationException("Configure a frontend OAuth callback URL without query parameters or fragment.");

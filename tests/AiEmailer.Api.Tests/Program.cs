@@ -213,4 +213,15 @@ Check("Ollama structured generation requests JSON format", requestFormat == "jso
 await jsonProvider.GenerateAsync("Return text", "Test");
 Check("Ollama replies remain plain text", requestFormat is null);
 await MailboxRegressionChecks.RunAsync(Check, service, provider, repository, handler, owner);
+var deployedUrls = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+{
+    ["BaseUrl"] = "https://aiemailerbackend.com/", ["FrontendUrl"] = "https://aiemailerproto.com/",
+    ["Mailbox:Gmail:RedirectUri"] = "https://localhost:5080/old"
+}).Build();
+Check("Gmail callback uses BaseUrl over legacy configuration", ApplicationUrls.GmailCallback(deployedUrls) == "https://aiemailerbackend.com/api/mailbox/gmail/callback");
+Check("Login callback uses frontend origin", ApplicationUrls.LoginCallback(deployedUrls) == "https://aiemailerproto.com/login-success.html");
+Check("CORS origin strips trailing slash", ApplicationUrls.Origin(deployedUrls, "FrontendUrl") == "https://aiemailerproto.com");
+deployedUrls["BaseUrl"] = "https://example.com/unexpected-path";
+try { ApplicationUrls.Origin(deployedUrls, "BaseUrl"); throw new Exception("Invalid URL accepted"); }
+catch (InvalidOperationException) { Check("Invalid application origin rejected", true); }
 Console.WriteLine($"{passed} checks passed.");
