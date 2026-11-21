@@ -3,7 +3,8 @@ name: Deploy AiEmailer to IIS
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -15,47 +16,177 @@ concurrency:
 
 jobs:
   deploy:
+    name: Publish and Deploy AiEmailer
     runs-on: [self-hosted, Windows]
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        shell: powershell
+
+    env:
+      PROJECT_PATH: AiEmailer.Api.csproj
+      IIS_PATH: 'E:\AIEmailer\Backend'
+      BACKUP_ROOT: 'E:\AIEmailer\DeployBackups'
 
     steps:
+      # STEP 1: Download source code
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # STEP 2: Install .NET SDK
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
-      - name: Publish backend
-        shell: powershell
+      # STEP 3: Verify project and IIS paths
+      - name: Validate deployment paths
         run: |
-          dotnet publish "./AiEmailer.Api.csproj" -c Release -o "$env:RUNNER_TEMP\AiEmailerPublish"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Publish failed"
+          $project = Join-Path $env:GITHUB_WORKSPACE $env:PROJECT_PATH
+
+          if (!(Test-Path $project)) {
+            throw "Project not found: $project"
           }
 
-      - name: Deploy to IIS
-        shell: powershell
+          if (!(Test-Path $env:IIS_PATH)) {
+            throw "IIS folder not found: $env:IIS_PATH"
+          }
+
+          Write-Host "Project: $project"
+          Write-Host "IIS folder: $env:IIS_PATH"
+
+      # STEP 4: Publish application
+      - name: Publish ASP.NET Core API
         run: |
-          $source = "$env:RUNNER_TEMP\AiEmailerPublish"
-          $target = "E:\AIEmailer\Backend"
+          $project = Join-Path $env:GITHUB_WORKSPACE $env:PROJECT_PATH
+          $publish = Join-Path $env:RUNNER_TEMP "AiEmailerPublish"
+
+          if (Test-Path $publish) {
+            Remove-Item $publish -Recurse -Force
+          }
+
+          dotnet publish "$project" `
+            --configuration Release `
+            --output "$publish"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Dotnet publish failed: $LASTEXITCODE"
+          }
+
+          if (!(Test-Path "$publish\AiEmailer.Api.dll")) {
+            throw "Published API DLL is missing."
+          }
+
+          Write-Host "Publish completed successfully."
+
+      # STEP 5: Backup and deploy
+      - name: Backup and deploy to IIS
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $source = Join-Path $env:RUNNER_TEMP "AiEmailerPublish"
+          $target = $env:IIS_PATH
+          $backup = Join-Path $env:BACKUP_ROOT $env:GITHUB_RUN_ID
+          $offline = Join-Path $target "app_offline.htm"
+
+          if (!(Test-Path $source)) {
+            throw "Publish output missing."
+          }
 
           if (!(Test-Path $target)) {
-            throw "IIS target directory does not exist."
+            throw "IIS destination missing."
           }
 
-          $offline = Join-Path $target "app_offline.htm"
-          Set-Content $offline "Deployment in progress"
+          if (Test-Path $offline) {
+            throw "Application already has app_offline.htm. Check IIS before deploying."
+          }
+
+          # Create backup folder
+          New-Item -ItemType Directory `
+            -Path $backup -Force | Out-Null
+
+          Write-Host "Backing up current IIS deployment..."
+
+          & robocopy $target $backup /E /R:3 /W:2 `
+            /XF app_offline.htm
+
+          $backupCode = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+
+          if ($backupCode -ge 8) {
+            throw "Backup failed with code $backupCode"
+          }
+
+          Write-Host "Backup completed: $backup"
+
+          $deploymentStarted = $false
 
           try {
-            Start-Sleep -Seconds 5
+            # Ask ASP.NET Core Module to stop application
+            Set-Content -Path $offline `
+              -Value "Deployment in progress"
 
-            robocopy $source $target /E /R:3 /W:2 /XF appsettings.Production.json app_offline.htm
+            $deploymentStarted = $true
 
-            if ($LASTEXITCODE -ge 8) {
-              throw "IIS deployment failed"
+            Start-Sleep -Seconds 10
+
+            Write-Host "Copying published files to IIS..."
+
+            # Preserve ALL appsettings JSON files
+            & robocopy $source $target /E /R:5 /W:3 `
+              /XF appsettings.json appsettings.*.json app_offline.htm
+
+            $copyCode = $LASTEXITCODE
+            $global:LASTEXITCODE = 0
+
+            Write-Host "Robocopy exit code: $copyCode"
+
+            if ($copyCode -ge 8) {
+              throw "File copy failed with code $copyCode"
             }
+
+            Write-Host "IIS files copied successfully."
+          }
+          catch {
+            $originalError = $_
+
+            if ($deploymentStarted) {
+              Write-Warning "Deployment failed. Restoring backup..."
+
+              & robocopy $backup $target /E /R:5 /W:3 `
+                /XF app_offline.htm
+
+              $rollbackCode = $LASTEXITCODE
+              $global:LASTEXITCODE = 0
+
+              if ($rollbackCode -ge 8) {
+                Write-Error "Rollback also failed: $rollbackCode"
+              }
+              else {
+                Write-Host "Previous files restored."
+              }
+            }
+
+            throw $originalError
           }
           finally {
-            Remove-Item $offline -Force -ErrorAction SilentlyContinue
+            if ($deploymentStarted) {
+              if (Test-Path $offline) {
+                Remove-Item $offline -Force
+              }
+            }
+
+            $global:LASTEXITCODE = 0
           }
+
+          Write-Host "AiEmailer deployment completed."
+
+      # STEP 6: Final deployment summary
+      - name: Deployment summary
+        run: |
+          Write-Host "=================================="
+          Write-Host "AiEmailer deployment finished"
+          Write-Host "Commit: $env:GITHUB_SHA"
+          Write-Host "Target: $env:IIS_PATH"
+          Write-Host "=================================="
