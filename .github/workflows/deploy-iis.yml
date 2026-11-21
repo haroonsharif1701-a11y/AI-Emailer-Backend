@@ -29,7 +29,7 @@ jobs:
       - name: Publish backend
         shell: powershell
         run: |
-          dotnet publish ".\D:\AIEmailer\AiEmailerBackend\AiEmailer.Api.csproj" -c Release -o "$env:RUNNER_TEMP\AiEmailerPublish"
+          dotnet publish "AiEmailerBackend/AiEmailer.Api.csproj" -c Release -o "$env:RUNNER_TEMP\AiEmailerPublish"
           if ($LASTEXITCODE -ne 0) {
             throw "Publish failed"
           }
