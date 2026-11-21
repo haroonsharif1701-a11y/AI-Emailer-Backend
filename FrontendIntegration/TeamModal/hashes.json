@@ -1,0 +1,12 @@
+[
+  {
+    "Path": "js/settings.js",
+    "OriginalHash": "fc9971474d7efcdf14512d69562fe7928da3fa541ab863ce8e207525dcaf3c86",
+    "PatchedHash": "e3e06560e60abdb202a54323076a9b24a8455255da0dc3850ee9305c5415ee60"
+  },
+  {
+    "Path": "js/permissions.js",
+    "OriginalHash": "51052394808ca478134a91635b4966628342ebc4d312a30ba3175f55f59506b7",
+    "PatchedHash": "6aee385eebaae99a03e1110495295c9e94c95ed6e852a2c7cc0d950562fff9ab"
+  }
+]

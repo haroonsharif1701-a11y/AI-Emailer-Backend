@@ -1,15 +1,16 @@
 ﻿using AiEmailer.Api.Models;
 using Microsoft.Data.SqlClient;
 using System.Data;
+using AiEmailer.Api.Data;
 
 namespace AiEmailer.Api.Services
 {
     public class MenuService : IMenuService
     {
         private readonly string _connectionString;
-        public MenuService(IConfiguration config)
+        public MenuService(DB db)
         {
-            _connectionString = config.GetConnectionString("Default")
+            _connectionString = db.GetConnectionString()
                 ?? throw new InvalidOperationException("ConnectionStrings:Default is not configured in appsettings.json.");
         }
 

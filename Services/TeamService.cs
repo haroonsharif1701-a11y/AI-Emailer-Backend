@@ -1,6 +1,7 @@
 using System.Data;
 using AiEmailer.Api.Models;
 using Microsoft.Data.SqlClient;
+using AiEmailer.Api.Data;
 
 namespace AiEmailer.Api.Services;
 
@@ -8,9 +9,9 @@ public sealed class TeamService : ITeamService
 {
     private readonly string _connectionString;
 
-    public TeamService(IConfiguration config)
+    public TeamService(DB db)
     {
-        _connectionString = config.GetConnectionString("Default")
+        _connectionString = db.GetConnectionString()
             ?? throw new InvalidOperationException("ConnectionStrings:Default is not configured in appsettings.json.");
     }
 

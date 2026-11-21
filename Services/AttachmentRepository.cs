@@ -1,5 +1,6 @@
 ﻿using Microsoft.Data.SqlClient;
 using System.Data;
+using AiEmailer.Api.Data;
 
 namespace AiEmailer.Api.Services;
 
@@ -7,9 +8,9 @@ public class AttachmentRepository : IAttachmentRepository
 {
     private readonly string _connectionString;
 
-    public AttachmentRepository(IConfiguration configuration)
+    public AttachmentRepository(DB db)
     {
-        _connectionString = configuration.GetConnectionString("Default")
+        _connectionString = db.GetConnectionString()
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
     }
 

@@ -44,6 +44,7 @@ public class UserController : ControllerBase
                     "Organization ID is missing from both JWT claims and session.");
 
     [HttpGet("list")]
+    [MenuPermission("view", "settings.users", "organization", "settings.team")]
     public async Task<ActionResult<List<UserListItem>>> List()
     {
         var users = await _userService.ListAsync(CurrentOrgId);
@@ -51,6 +52,7 @@ public class UserController : ControllerBase
     }
 
     [HttpGet("{id:int}")]
+    [MenuPermission("view", "settings.users")]
     public async Task<ActionResult<UserDetail>> Get(int id)
     {
         string? uuqid = null; //HttpContext.Session.GetString("Uuqid");
@@ -65,13 +67,14 @@ public class UserController : ControllerBase
     }
 
     [HttpPost("addupd")]
+    [MenuPermission("update", "settings.users", IdProperty = "IdUser")]
     public async Task<IActionResult> AddUpdate([FromBody] UserSaveRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.FullName))
         {
             return BadRequest(new { message = "Username and full name are required." });
         }
-        string uuqid = HttpContext.Session.GetString("Uuqid") ?? CurrentUUqid;
+        string uuqid = CurrentUUqid;
         if (request.IdUser != 0)
         {
             // Confirm the user being edited actually belongs to the caller's
@@ -95,9 +98,10 @@ public class UserController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [MenuPermission("delete", "settings.users")]
     public async Task<IActionResult> Delete(int id)
     {
-        string uuqid = HttpContext.Session.GetString("Uuqid") ?? CurrentUUqid; ;
+        string uuqid = CurrentUUqid;
         // Backend-only for now — no UI button wired to this yet, per scope.
         var existing = await _userService.GetAsync(id, uuqid);
         if (existing is null || existing.IdOrg != CurrentOrgId)
@@ -109,10 +113,20 @@ public class UserController : ControllerBase
         return Ok(new { message = "Deleted." });
     }
 
+    [HttpPut("me")]
+    [MenuPermission("update", "settings.profile")]
+    public async Task<IActionResult> UpdateProfile([FromBody] ProfileUpdateRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.FullName))
+            return BadRequest(new { message = "Full name and email are required." });
+        await _userService.UpdateProfileAsync(CurrentUserId, CurrentOrgId, request);
+        return Ok(new { message = "Profile saved." });
+    }
+
     [HttpGet("me")]
     public async Task<ActionResult<UserDetail>> Me()
     {
-        string? uuqid = HttpContext.Session.GetString("Uuqid") ?? CurrentUUqid;
+        string? uuqid = CurrentUUqid;
 
         if (string.IsNullOrWhiteSpace(uuqid))
         {
@@ -126,6 +140,7 @@ public class UserController : ControllerBase
             return NotFound(new { message = "Logged-in user not found." });
         }
 
+        if (!user.IsActive) return Forbid();
         return Ok(user);
     }
 }

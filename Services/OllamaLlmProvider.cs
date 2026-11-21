@@ -19,7 +19,13 @@ public class OllamaLlmProvider : ILlmProvider
         _logger = logger;
     }
 
-    public async Task<string> GenerateAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
+    public Task<string> GenerateAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
+        => GenerateCoreAsync(systemPrompt, userPrompt, null, ct);
+
+    public Task<string> GenerateJsonAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
+        => GenerateCoreAsync(systemPrompt, userPrompt, "json", ct);
+
+    private async Task<string> GenerateCoreAsync(string systemPrompt, string userPrompt, string? format, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         _logger.LogInformation(
@@ -29,6 +35,7 @@ public class OllamaLlmProvider : ILlmProvider
         {
             Model = _model,
             Stream = false,
+            Format = format,
             Messages = new[]
             {
                 new OllamaMessage { Role = "system", Content = systemPrompt },
@@ -63,6 +70,7 @@ public class OllamaLlmProvider : ILlmProvider
     {
         [JsonPropertyName("model")] public string Model { get; set; } = "";
         [JsonPropertyName("stream")] public bool Stream { get; set; }
+        [JsonPropertyName("format"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Format { get; set; }
         [JsonPropertyName("messages")] public OllamaMessage[] Messages { get; set; } = Array.Empty<OllamaMessage>();
     }
 

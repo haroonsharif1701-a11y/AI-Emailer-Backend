@@ -1,21 +1,64 @@
 using AiEmailer.Api.Data;
 using AiEmailer.Api.Middlewares;
 using AiEmailer.Api.Services;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Serilog;
 using System.Text;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
+// Local credentials stay outside Git; deployment environment variables take precedence.
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false)
+    .AddEnvironmentVariables()
+    .AddCommandLine(args);
+var mailProviders = builder.Configuration.GetSection("MailProvider").Get<MailProviderSettings>() ?? new();
+mailProviders.Validate();
+builder.Services.AddSingleton(mailProviders);
+var protection = builder.Services.AddDataProtection().SetApplicationName("AiEmailer");
+var keyPath = builder.Configuration["Mailbox:KeyPath"];
+if (!string.IsNullOrWhiteSpace(keyPath))
+{
+    protection.PersistKeysToFileSystem(new DirectoryInfo(keyPath));
+    if (OperatingSystem.IsWindows()) protection.ProtectKeysWithDpapi();
+}
+builder.Services.AddSingleton<MailboxTokenProtector>();
+builder.Services.AddScoped<IMailboxRepository, MailboxRepository>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<GmailApiClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+    client.MaxResponseContentBufferSize = 16 * 1024 * 1024;
+}).RemoveAllLoggers();
+builder.Services.AddScoped<IMailProvider, GmailMailProvider>();
+builder.Services.AddScoped<MailboxService>();
+builder.Services.AddScoped<MailboxAiService>();
+builder.Services.AddHostedService<MailboxSyncWorker>();
+
+// Configure Serilog
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .WriteTo.File("logs/app-log.txt", rollingInterval: RollingInterval.Day)
+    .CreateLogger();
+
+builder.Host.UseSerilog();
+
 builder.Services.AddDistributedMemoryCache();
+
 
 builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromMinutes(60);
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
-    options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Lax; // Changed from None to Lax for better compatibility with OAuth redirects
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest; // Changed from Always to SameAsRequest for local dev
 });
 // ---------------------------------------------------------------
 // Config
@@ -29,7 +72,10 @@ var jwtAudience = jwtSection["Audience"] ?? "AiEmailerClient";
 // ---------------------------------------------------------------
 // Services
 // ---------------------------------------------------------------
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<RbacExceptionFilter>());
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentAccessService, CurrentAccessService>();
+builder.Services.AddScoped<ILoginSessionService, LoginSessionService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -57,6 +103,7 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Services.AddSingleton<IJwtTokenService>(new JwtTokenService(jwtKey, jwtIssuer, jwtAudience));
 builder.Services.AddScoped<DB>();
+builder.Services.AddScoped<IExternalAuthService, ExternalAuthService>();
 builder.Services.AddScoped<IAttachmentTextExtractor, AttachmentTextExtractor>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IUserService, UserService>();
@@ -97,7 +144,22 @@ builder.Services.AddCors(options =>
 });
 
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+var authentication = builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme =
+        JwtBearerDefaults.AuthenticationScheme;
+
+    options.DefaultChallengeScheme =
+        JwtBearerDefaults.AuthenticationScheme;
+
+    options.DefaultSignInScheme =
+        CookieAuthenticationDefaults.AuthenticationScheme;
+})
+    .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+    {
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    })
     .AddJwtBearer(options =>
     {
         options.TokenValidationParameters = new TokenValidationParameters
@@ -118,6 +180,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
         options.Events = new JwtBearerEvents
         {
+            OnTokenValidated = async context =>
+            {
+                var principal = context.Principal!;
+                if (!Guid.TryParse(principal.FindFirst("jti")?.Value, out var sessionId) ||
+                    !int.TryParse(principal.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? principal.FindFirst("sub")?.Value, out var userId) ||
+                    !int.TryParse(principal.FindFirst("org_id")?.Value, out var orgId) ||
+                    !await context.HttpContext.RequestServices.GetRequiredService<ILoginSessionService>()
+                        .IsActiveAsync(sessionId, userId, orgId, context.HttpContext.RequestAborted))
+                    context.Fail("Login session is expired or revoked.");
+            },
             OnChallenge = async context =>
             {
                 context.HandleResponse();
@@ -168,6 +240,36 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             }
         };
     });
+if (mailProviders.Gmail) authentication.AddGoogle(options =>
+    {
+        options.ClientId = builder.Configuration["Authentication:Google:ClientId"];
+        options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+        options.Events = new OAuthEvents
+        {
+            OnRemoteFailure = context =>
+            {
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILogger<Program>>();
+                logger.LogError("Google remote authentication failed.");
+
+                context.HandleResponse();
+                var frontendUrl = builder.Configuration["Authentication:ExternalRedirectUri"] ?? "http://localhost:5500/login-error";
+                context.Response.Redirect($"{frontendUrl}?error=remote_failure");
+                return Task.CompletedTask;
+            }
+        };
+    });
+if (mailProviders.Outlook) authentication.AddOpenIdConnect("EntraID", options =>
+    {
+        options.Authority = builder.Configuration["Authentication:EntraID:Instance"] + builder.Configuration["Authentication:EntraID:TenantId"] + "/v2.0";
+        options.ClientId = builder.Configuration["Authentication:EntraID:ClientId"];
+        options.ClientSecret = builder.Configuration["Authentication:EntraID:ClientSecret"];
+        options.ResponseType = "code";
+        options.SaveTokens = true;
+        options.Scope.Add("openid");
+        options.Scope.Add("profile");
+        options.Scope.Add("email");
+    });
 
 builder.Services.AddAuthorization();
 
@@ -185,6 +287,7 @@ if (app.Environment.IsDevelopment())
 //app.UseHttpsRedirection(); //while pushing on server with a non http site then comment it
 app.UseCors("Frontend");
 app.UseSession();
+app.UseMiddleware<MailProviderMiddleware>();
 app.UseMiddleware<SystemKeyMiddleware>();
 // Logs every request that hits the API — method, path, status code, and how
 // long it took. This is what lets you SEE that CORS/auth/routing worked,

@@ -17,17 +17,18 @@ public sealed class TeamController : ControllerBase
     public TeamController(ITeamService service) => _service = service;
 
     private string CurrentUuqid =>
-        HttpContext.Session.GetString("Uuqid")
-        ?? User.FindFirstValue("uuqid")
+        User.FindFirstValue("uuqid")
         ?? throw new UnauthorizedAccessException("User session UUID was not found.");
 
     [HttpGet("list")]
+    [MenuPermission("view", "settings.team")]
     public async Task<ActionResult<List<TeamListItem>>> List(
         [FromQuery] int? idTeam = null,
         [FromQuery] int? idDept = null)
         => Ok(await _service.ListAsync(CurrentUuqid, idTeam, idDept));
 
     [HttpPost("addupd")]
+    [MenuPermission("update", "settings.team", IdProperty = "IdTeam")]
     public async Task<IActionResult> AddUpdate([FromBody] TeamSaveRequest request)
     {
         try
@@ -50,6 +51,7 @@ public sealed class TeamController : ControllerBase
     }
 
     [HttpGet("{idTeam:int}/members")]
+    [MenuPermission("view", "settings.team")]
     public async Task<ActionResult<List<TeamMemberListItem>>> ListMembers(int idTeam)
     {
         try
@@ -67,6 +69,7 @@ public sealed class TeamController : ControllerBase
     }
 
     [HttpPost("{idTeam:int}/members")]
+    [MenuPermission("update", "settings.team")]
     public async Task<IActionResult> SyncMembers(int idTeam, [FromBody] TeamMemberSyncRequest request)
     {
         if (idTeam != request.IdTeam)

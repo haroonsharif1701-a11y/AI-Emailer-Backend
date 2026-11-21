@@ -17,15 +17,16 @@ public sealed class DepartmentController : ControllerBase
     public DepartmentController(IDepartmentService service) => _service = service;
 
     private string CurrentUuqid =>
-        HttpContext.Session.GetString("Uuqid")
-        ?? User.FindFirstValue("uuqid")
+        User.FindFirstValue("uuqid")
         ?? throw new UnauthorizedAccessException("User session UUID was not found.");
 
     [HttpGet("list")]
+    [MenuPermission("view", "settings.dept", "settings.team", "settings.users")]
     public async Task<ActionResult<List<DepartmentListItem>>> List([FromQuery] int? idDept = null)
         => Ok(await _service.ListAsync(CurrentUuqid, idDept));
 
     [HttpPost("addupd")]
+    [MenuPermission("update", "settings.dept", IdProperty = "IdDept")]
     public async Task<IActionResult> AddUpdate([FromBody] DepartmentSaveRequest request)
     {
         try

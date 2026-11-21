@@ -38,11 +38,23 @@ namespace AiEmailer.Api.Middlewares
                     HeaderName,
                     out var suppliedKey))
             {
+                // Exclude OAuth endpoints and internal .NET sign-in paths from System Key requirement
+                if (context.Request.Path.Equals("/api/mailbox/gmail/callback", StringComparison.OrdinalIgnoreCase) ||
+                    context.Request.Path.StartsWithSegments("/api/auth/external-callback") ||
+                    context.Request.Path.StartsWithSegments("/api/auth/login-external") ||
+                    context.Request.Path.StartsWithSegments("/login-success") ||
+                    context.Request.Path.StartsWithSegments("/login-error") ||
+                    context.Request.Path.StartsWithSegments("/signin-google") ||
+                    context.Request.Path.StartsWithSegments("/signin-oidc"))
+                {
+                    await _next(context);
+                    return;
+                }
+
                 await WriteError(
                     context,
                     StatusCodes.Status401Unauthorized,
                     "System key is required.");
-
                 return;
             }
 

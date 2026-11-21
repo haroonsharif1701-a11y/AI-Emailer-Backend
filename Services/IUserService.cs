@@ -8,4 +8,5 @@ public interface IUserService
     Task<UserDetail?> GetAsync(int idUser, string? uuqid);
     Task AddUpdateAsync(UserSaveRequest request, int actingUserId, string uuqid);
     Task DeleteAsync(int idUser);
+    Task UpdateProfileAsync(int userId, int organizationId, ProfileUpdateRequest request);
 }

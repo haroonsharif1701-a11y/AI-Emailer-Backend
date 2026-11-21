@@ -10,4 +10,6 @@ namespace AiEmailer.Api.Services;
 public interface ILlmProvider
 {
     Task<string> GenerateAsync(string systemPrompt, string userPrompt, CancellationToken ct = default);
+    Task<string> GenerateJsonAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
+        => GenerateAsync(systemPrompt, userPrompt, ct);
 }

@@ -20,6 +20,7 @@ public class RoleController : ControllerBase
     }
 
     [HttpGet("list")]
+    [MenuPermission("view", "settings.roles", "settings.permissions", "settings.users")]
     public async Task<ActionResult<List<RoleListItem>>> List()
     {
         var roles = await _roleService.ListAsync();
@@ -27,6 +28,7 @@ public class RoleController : ControllerBase
     }
 
     [HttpPost("addupd")]
+    [MenuPermission("update", "settings.roles", IdProperty = "IdRole")]
     public async Task<IActionResult> AddUpdate([FromBody] RoleSaveRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.RoleName))
@@ -38,8 +40,10 @@ public class RoleController : ControllerBase
 
     // ---- NEW ----
     [HttpPost("delete")]
-    public async Task<IActionResult> Delete([FromBody] int idRole)
+    [MenuPermission("delete", "settings.roles")]
+    public async Task<IActionResult> Delete([FromBody] RoleDeleteRequest request)
     {
+        var idRole = request.IdRole;
         if (idRole <= 0)
             return BadRequest(new { message = "A valid role id is required." });
 
@@ -56,3 +60,5 @@ public class RoleController : ControllerBase
         return int.TryParse(raw, out var id) ? id : 0;
     }
 }
+
+public record RoleDeleteRequest(int IdRole);

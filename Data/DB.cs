@@ -9,9 +9,7 @@
 
         public string GetConnectionString() {
 
-            var connection = _config["ConnectionStrings: Default"];
-
-            return connection;
+            return _config.GetConnectionString("Default");
         }
 
         

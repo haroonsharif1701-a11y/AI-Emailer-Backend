@@ -87,6 +87,7 @@ public class AttachmentController : ControllerBase
 
 
     [HttpPost("analyze")]
+    [MenuPermission("add", "attachments")]
     [RequestSizeLimit(MaxFileSizeBytes)]
     public async Task<ActionResult<AttachmentAnalysisResponse>> Analyze(IFormFile file, CancellationToken ct)
     {
@@ -215,17 +216,19 @@ public class AttachmentController : ControllerBase
     }
 
     [HttpGet("list")]
+    [MenuPermission("view", "attachments")]
     public async Task<ActionResult<IEnumerable<AttachmentListItem>>> List(CancellationToken ct)
     {
         var records = await _attachmentRepo.ListAsync(idAttachment: null, ct);
-        return Ok(records.Select(ToListItem));
+        return Ok(records.Where(record => record.IdOrg == GetCurrentOrgId()).Select(ToListItem));
     }
 
     [HttpGet("file/{id:int}")]
+    [MenuPermission("view", "attachments")]
     public async Task<IActionResult> GetFile(int id, [FromQuery] bool download = false, CancellationToken ct = default)
     {
         var records = await _attachmentRepo.ListAsync(id, ct);
-        var record = records.FirstOrDefault();
+        var record = records.FirstOrDefault(record => record.IdOrg == GetCurrentOrgId());
         if (record is null || string.IsNullOrWhiteSpace(record.FilePath) || !_fileStorage.Exists(record.FilePath))
             return NotFound();
 
@@ -238,11 +241,12 @@ public class AttachmentController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [MenuPermission("delete", "attachments")]
     public async Task<IActionResult> Delete(int id, CancellationToken ct)
     {
         var idOrg = GetCurrentOrgId();
         var records = await _attachmentRepo.ListAsync(id, ct);
-        var record = records.FirstOrDefault();
+        var record = records.FirstOrDefault(record => record.IdOrg == GetCurrentOrgId());
         if (record is null) return NotFound();
 
         try

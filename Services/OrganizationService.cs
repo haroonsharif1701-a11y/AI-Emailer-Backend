@@ -1,16 +1,17 @@
 ﻿using System.Data;
 using Microsoft.Data.SqlClient;
 using AiEmailer.Api.Models;
+using AiEmailer.Api.Data;
 
 namespace AiEmailer.Api.Services;
 
 public class OrganizationService : IOrganizationService
 {
-    private readonly IConfiguration _configuration;
+    private readonly DB _db;
 
-    public OrganizationService(IConfiguration configuration)
+    public OrganizationService(DB db)
     {
-        _configuration = configuration;
+        _db = db;
     }
 
     public async Task<OrganizationCardCounts?> GetCardCountsAsync(string uuqid)
@@ -18,8 +19,7 @@ public class OrganizationService : IOrganizationService
         if (string.IsNullOrWhiteSpace(uuqid))
             return null;
 
-        var connectionString =
-            _configuration.GetConnectionString("Default");
+        var connectionString = _db.GetConnectionString();
 
         await using var connection = new SqlConnection(connectionString);
         await using var command = new SqlCommand("dbo.org_card_counts", connection)

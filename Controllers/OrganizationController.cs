@@ -1,4 +1,4 @@
-﻿using AiEmailer.Api.Models;
+using AiEmailer.Api.Models;
 using AiEmailer.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -19,12 +19,12 @@ public class OrganizationController : ControllerBase
     }
 
     private string CurrentUuqid =>
-        HttpContext.Session.GetString("Uuqid")
-        ?? User.FindFirstValue("uuqid")
+        User.FindFirstValue("uuqid")
         ?? throw new InvalidOperationException(
             "User UUID is missing from both session and claims.");
 
     [HttpGet("card-counts")]
+    [MenuPermission("view", "organization")]
     public async Task<ActionResult<OrganizationCardCounts>> GetCardCounts()
     {
         var result =

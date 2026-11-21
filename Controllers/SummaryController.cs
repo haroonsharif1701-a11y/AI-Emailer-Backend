@@ -19,6 +19,7 @@ public class SummaryController : ControllerBase
     }
 
     [HttpPost("generate")]
+    [MenuPermission("view", "inbox")]
     public async Task<ActionResult<SummarizeResponse>> Generate(
         [FromBody] SummarizeRequest request, CancellationToken ct)
     {
@@ -38,15 +39,11 @@ public class SummaryController : ControllerBase
 
         try
         {
-            var raw = await _llm.GenerateAsync(systemPrompt, userPrompt, ct);
-            var cleaned = raw.Trim().Trim('`').Replace("json\n", "", StringComparison.OrdinalIgnoreCase);
+            var raw = await _llm.GenerateJsonAsync(systemPrompt, userPrompt, ct);
+            var parsed = LlmJson.Parse<SummarizeResponse>(raw);
 
-            var parsed = JsonSerializer.Deserialize<SummarizeResponse>(cleaned, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-            });
-
-            if (parsed is null)
+            if (string.IsNullOrWhiteSpace(parsed.Summary) || parsed.ActionItems is null ||
+                parsed.ActionItems.Any(item => item is null) || parsed.Priority is not ("Low" or "Normal" or "High"))
             {
                 return StatusCode(502, new { message = "Model returned unparseable output." });
             }

@@ -18,7 +18,7 @@ public class JwtTokenService : IJwtTokenService
         _audience = audience;
     }
 
-    public string CreateToken(string userId, string email, string role, string idOrg, string uuqid)
+    public string CreateToken(string userId, string email, string role, string idOrg, string uuqid, Guid sessionId)
     {
         var claims = new[]
         {
@@ -27,7 +27,7 @@ public class JwtTokenService : IJwtTokenService
             new Claim("uuqid", uuqid),
             new Claim(ClaimTypes.Role, role),
             new Claim("org_id", idOrg), // custom claim — read via User.FindFirst("org_id") in controllers
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim(JwtRegisteredClaimNames.Jti, sessionId.ToString()),
         };
 
         var credentials = new SigningCredentials(
@@ -38,7 +38,7 @@ public class JwtTokenService : IJwtTokenService
             issuer: _issuer,
             audience: _audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(60),
+            expires: DateTime.UtcNow.AddMinutes(LoginSessionService.LifetimeMinutes),
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

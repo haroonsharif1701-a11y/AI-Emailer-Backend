@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml.Office2016.Excel;
 using Microsoft.Data.SqlClient;
 using System.Data;
 using System.Text;
+using AiEmailer.Api.Data;
 
 namespace AiEmailer.Api.Services;
 
@@ -13,9 +14,9 @@ public class AuthService : IAuthService
     private readonly string _connectionString;
     private readonly ILogger<AuthService> _logger;
 
-    public AuthService(IConfiguration config, ILogger<AuthService> logger)
+    public AuthService(DB db, ILogger<AuthService> logger)
     {
-        _connectionString = config.GetConnectionString("Default")
+        _connectionString = db.GetConnectionString()
             ?? throw new InvalidOperationException(
                 "ConnectionStrings:Default is not configured in appsettings.json.");
         _logger = logger;

@@ -1,0 +1,50 @@
+backups/
+App_Data/
+**/__pycache__/
+
+# ==============================
+# AiEmailer - .NET Backend
+# ==============================
+
+# Build output
+**/bin/
+**/obj/
+**/Debug/
+**/Release/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+
+# Test output
+**/TestResults/
+*.trx
+coverage/
+coverage.cobertura.xml
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+**/secrets.json
+
+# Sensitive local configuration
+appsettings.Development.json
+appsettings.Local.json
+**/appsettings.Development.json
+**/appsettings.Local.json
+
+# Logs
+logs/
+**/logs/
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+
+# Local tooling state and uploaded documents
+.claude/
+wwwroot/attachments/

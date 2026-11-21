@@ -2,6 +2,7 @@ using System.Data;
 using System.Text;
 using AiEmailer.Api.Models;
 using Microsoft.Data.SqlClient;
+using AiEmailer.Api.Data;
 
 namespace AiEmailer.Api.Services;
 
@@ -9,12 +10,16 @@ public class UserService : IUserService
 {
     private readonly string _connectionString;
     private readonly IRoleService _roleService;
+    private readonly ICurrentAccessService _access;
+    private readonly IHttpContextAccessor _context;
 
-    public UserService(IConfiguration config, IRoleService roleService)
+    public UserService(DB db, IRoleService roleService, ICurrentAccessService access, IHttpContextAccessor context)
     {
-        _connectionString = config.GetConnectionString("Default")
+        _connectionString = db.GetConnectionString()
             ?? throw new InvalidOperationException("ConnectionStrings:Default is not configured in appsettings.json.");
         _roleService = roleService;
+        _access = access;
+        _context = context;
     }
 
     public async Task<List<UserListItem>> ListAsync(int idOrg)
@@ -137,7 +142,7 @@ public class UserService : IUserService
         }
 
         await using var conn = new SqlConnection(_connectionString);
-        await using var cmd = new SqlCommand("user_addupd", conn) { CommandType = CommandType.StoredProcedure };
+        await using var cmd = new SqlCommand("rbac_user_addupd", conn) { CommandType = CommandType.StoredProcedure };
 
         cmd.Parameters.AddWithValue("@id_user", request.IdUser);
         cmd.Parameters.AddWithValue("@username", request.Username);
@@ -162,9 +167,25 @@ public class UserService : IUserService
     public async Task DeleteAsync(int idUser)
     {
         await using var conn = new SqlConnection(_connectionString);
-        await using var cmd = new SqlCommand("user_delete", conn) { CommandType = CommandType.StoredProcedure };
+        await using var cmd = new SqlCommand("rbac_user_delete", conn) { CommandType = CommandType.StoredProcedure };
         cmd.Parameters.AddWithValue("@id_user", idUser);
+        cmd.Parameters.AddWithValue("@id_org", (await _access.GetAsync())!.OrganizationId);
+        cmd.Parameters.AddWithValue("@actor", int.Parse(_context.HttpContext!.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value));
         await conn.OpenAsync();
         await cmd.ExecuteNonQueryAsync();
+    }
+    public async Task UpdateProfileAsync(int userId, int organizationId, ProfileUpdateRequest request)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await using var command = new SqlCommand("""
+            UPDATE dbo.skey_user SET username=@username,fullname=@name,modifiedby=@id,modifieddt=GETDATE()
+            WHERE id_user=@id AND id_org=@org AND is_active=1
+            """, connection);
+        command.Parameters.Add("@username", SqlDbType.VarChar, 200).Value = request.Username.Trim();
+        command.Parameters.Add("@name", SqlDbType.VarChar, 300).Value = request.FullName.Trim();
+        command.Parameters.Add("@id", SqlDbType.Int).Value = userId;
+        command.Parameters.Add("@org", SqlDbType.Int).Value = organizationId;
+        await connection.OpenAsync();
+        await command.ExecuteNonQueryAsync();
     }
 }

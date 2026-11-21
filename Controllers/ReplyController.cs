@@ -18,6 +18,7 @@ public class ReplyController : ControllerBase
     }
 
     [HttpPost("generate")]
+    [MenuPermission("add", "reply")]
     public async Task<ActionResult<GenerateReplyResponse>> Generate(
         [FromBody] GenerateReplyRequest request, CancellationToken ct)
     {
