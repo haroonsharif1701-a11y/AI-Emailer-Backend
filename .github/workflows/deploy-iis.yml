@@ -1,0 +1,61 @@
+
+name: Deploy AiEmailer to IIS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aiemailer-iis-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Windows]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish backend
+        shell: powershell
+        run: |
+          dotnet publish ".\D:\AIEmailer\AiEmailerBackend\AiEmailer.Api.csproj" -c Release -o "$env:RUNNER_TEMP\AiEmailerPublish"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Publish failed"
+          }
+
+      - name: Deploy to IIS
+        shell: powershell
+        run: |
+          $source = "$env:RUNNER_TEMP\AiEmailerPublish"
+          $target = "E:\AIEmailer\Backend"
+
+          if (!(Test-Path $target)) {
+            throw "IIS target directory does not exist."
+          }
+
+          $offline = Join-Path $target "app_offline.htm"
+          Set-Content $offline "Deployment in progress"
+
+          try {
+            Start-Sleep -Seconds 5
+
+            robocopy $source $target /E /R:3 /W:2 /XF appsettings.Production.json app_offline.htm
+
+            if ($LASTEXITCODE -ge 8) {
+              throw "IIS deployment failed"
+            }
+          }
+          finally {
+            Remove-Item $offline -Force -ErrorAction SilentlyContinue
+          }
